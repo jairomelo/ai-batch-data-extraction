@@ -5,7 +5,7 @@ load_dotenv()
 
 SERVICES = {
     "grit": {
-        "url": "https://llm.grit.ucsb.edu/",
+        "url": "https://llm.grit.ucsb.edu/api/v1",
         "key": os.getenv("GRIT_KEY")
     },
     "dream-lab": {
