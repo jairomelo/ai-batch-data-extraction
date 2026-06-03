@@ -4,6 +4,9 @@ from pprint import pp
 import logging        
 import argparse
 import sys
+from io import BytesIO
+from PIL import Image
+import base64
 
 def _client(service: dict) -> OpenAI:
     """helper function to build the client object"""
@@ -14,6 +17,22 @@ def _client(service: dict) -> OpenAI:
         api_key=service.get("key"),
         timeout=120.0
     )
+    
+def _encode_image(image_path, MAX_WIDTH=1568):
+    
+    img = Image.open(image_path)
+    
+    if img.format != "JPEG":
+        img = img.convert("RGB")
+    
+    if img.width > MAX_WIDTH:
+        ratio = MAX_WIDTH / img.width
+        img = img.resize((MAX_WIDTH, int(img.height * ratio)))
+        
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG")
+    
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 def list_models_from_service(service_name: str, service: dict, verbose: bool =False) -> None:
     
@@ -37,14 +56,23 @@ def list_models(verbose: bool =False) -> None:
         except Exception as e:
             logging.error(f"Error listing models for {name}: {e}")
 
-def chat(service: dict, model: str, user_input: str):
+def chat(service: dict, model: str, user_input: str, image_path: str | None = None):
     client = _client(service)
+    
+    content = [{"type": "text", "text": user_input}]
+    
+    if image_path:
+        
+        b64img = _encode_image(image_path)
+        img_content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64img}"}}
+        content.append(img_content)
+        
     
     response = client.chat.completions.create(
         model=model,
         messages=[{
             "role": "user",
-            "content": user_input
+            "content": content
         }]
     )
     return response.choices[0].message.content
@@ -64,6 +92,7 @@ def main():
     parser.add_argument("--list-models-v", action="store_true", help="Like --list-models but dumps full model metadata.")
     parser.add_argument("--model", type=str, help="Model ID to use. Requires --service.")
     parser.add_argument("--prompt", type=str, help="Prompt to send. Requires --service and --model.")
+    parser.add_argument("--image-path", type=str, help="Include an image to the prompt")
     
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -84,7 +113,7 @@ def main():
         if not args.service or not args.model:
             parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
-        print(chat(service_config, args.model, args.prompt))
+        print(chat(service_config, args.model, args.prompt, args.image_path))
 
 if __name__ == "__main__":
     main()
