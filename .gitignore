@@ -11,3 +11,6 @@ wheels/
 
 # Sensitive files
 .env
+
+# macOS files
+.DS_Store
