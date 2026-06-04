@@ -198,10 +198,11 @@ def main():
     parser = argparse.ArgumentParser(description="Basic CLI to interact with UCSB LLM providers")
     
     imgs_args = parser.add_mutually_exclusive_group()
+    list_group = parser.add_mutually_exclusive_group()
     
     parser.add_argument("--service", type=str, help=f"Service provider (e.g. 'grit', 'dream-lab'). " f"Available: {list(SERVICES)}")
-    parser.add_argument("--list-models", action="store_true", help="List model IDs. Scoped to --service if provided, otherwise all services.")
-    parser.add_argument("--list-models-v", action="store_true", help="Like --list-models but dumps full model metadata.")
+    list_group.add_argument("--list-models", action="store_true", help="List model IDs. Scoped to --service if provided, otherwise all services.")
+    list_group.add_argument("--list-models-v", action="store_true", help="Like --list-models but dumps full model metadata.")
     parser.add_argument("--model", type=str, help="Model ID to use. Requires --service.")
     parser.add_argument("--prompt", type=str, help="Prompt to send. Requires --service and --model.")
     parser.add_argument("--instructions", type=str, help="Instructions to guide the model.")
