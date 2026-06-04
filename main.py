@@ -11,6 +11,8 @@ from io import BytesIO
 from PIL import Image
 import base64
 from pathlib import Path
+import re
+import json
 
 def _client(service: dict) -> OpenAI:
     """helper function to build the client object"""
@@ -61,6 +63,10 @@ def _read_if_file(value: str) -> str:
     if p.exists() and p.is_file():
         return p.read_text(encoding="utf-8")
     return value
+
+def _is_image(path_obj: Path) -> bool:
+    img_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'}
+    return path_obj.suffix.lower() in img_extensions
 
 def _context_window(user_input: str, image_path: str | Path | None = None, instructions: str | None = None) -> list[dict]:
     """Handles user input and shape it to OpenAI compatible message format"""
@@ -126,26 +132,58 @@ def chat(service: dict, model: str, user_input: str, image_path: str | Path | No
     
     return response.choices[0].message.content
 
-def batch_processing(service: dict, model: str, user_input: str, image_dir: str | Path, instructions: str | None):
+def _extract_json(response: str):
+    match = re.search(r"```json\s*(\{.*?\})\s*```", response, re.DOTALL)
+    if match:
+        json_string = match.group(1)
+        try:
+            return json.loads(json_string)
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON content found: {e}")
+            return
+    
+    logging.warning("No json code block found")
+    return
+
+def batch_processing(service: dict, model: str, user_input: str, image_dir: str | Path, instructions: str | None) -> None:
     """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
     
-    conversation = _conversation(user_input)
+    starting = datetime.now()
     
-    destination_directory = Path("conversations", str(conversation.id))
+    init_batch = {
+        "project_id": starting.strftime('%Y%m%d%H%M%S'),
+        "service_url": service.get("url"),
+        "model": model,
+        "source_folder": image_dir,
+        "prompt": user_input,
+    }
+    if instructions:
+        init_batch["instructions"] = instructions
     
-    Path.mkdir(destination_directory, parents=True, exist_ok=True)
+    batch_directory = Path(f"conversations/{init_batch.get('project_id', 'batch')}")
+    Path.mkdir(batch_directory, parents=True, exist_ok=True)
     
     img_dir = Path(image_dir)
     if not img_dir.exists():
         raise FileNotFoundError(f"The folder {image_dir} doesn't exists")
     
     for image in Path(image_dir).iterdir():
+        if not _is_image(image):
+            continue
+        
+        filename = Path(batch_directory, image.stem).with_suffix(".json")
+        # add image path to init_batch
+        init_batch["image_path"] = str(image)
+        init_batch["start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         response = chat(service, model, user_input, image_path=image, instructions=instructions)
-        filename = Path(image.stem).with_suffix(".json")
-        with open(Path(destination_directory, filename), "w") as f:
-            f.write(response)
-            
-    return response[:500]
+        init_batch["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        json_response = _extract_json(response)
+        if isinstance(json_response, dict):
+            formatted_response = init_batch | json_response
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(formatted_response, f, indent=4)
+    
 
 
 def _validate_service(parser: argparse.ArgumentParser, service_name: str) -> dict:
@@ -158,14 +196,17 @@ def _validate_service(parser: argparse.ArgumentParser, service_name: str) -> dic
 
 def main():
     parser = argparse.ArgumentParser(description="Basic CLI to interact with UCSB LLM providers")
+    
+    imgs_args = parser.add_mutually_exclusive_group()
+    
     parser.add_argument("--service", type=str, help=f"Service provider (e.g. 'grit', 'dream-lab'). " f"Available: {list(SERVICES)}")
     parser.add_argument("--list-models", action="store_true", help="List model IDs. Scoped to --service if provided, otherwise all services.")
     parser.add_argument("--list-models-v", action="store_true", help="Like --list-models but dumps full model metadata.")
     parser.add_argument("--model", type=str, help="Model ID to use. Requires --service.")
     parser.add_argument("--prompt", type=str, help="Prompt to send. Requires --service and --model.")
     parser.add_argument("--instructions", type=str, help="Instructions to guide the model.")
-    parser.add_argument("--image-path", type=str, help="Include an image to the prompt")
-    parser.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
+    imgs_args.add_argument("--image-path", type=str, help="Include an image to the prompt")
+    imgs_args.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
     
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -188,6 +229,7 @@ def main():
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
         batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions)
+        return
     
     if args.prompt:
         if not args.service or not args.model:
