@@ -23,14 +23,6 @@ def _client(service: dict) -> OpenAI:
         api_key=service.get("key"),
         timeout=120.0
     )
-    
-def _conversation(prompt):    
-    return {
-        "id": uuid.uuid4().hex,
-        "start": datetime.now(),
-        "name": prompt[:100]
-    }
-    
 
 def _encode_image(image_path: str | Path, MAX_WIDTH: int = 1568):
     """Base64 encoding of attached images
