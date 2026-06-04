@@ -74,7 +74,6 @@ def _context_window(user_input: str, image_path: str | Path | None = None, instr
     user_content = [{"type": "text", "text": user_input}]
     
     if image_path:
-        user_content[0]["text"] += f"\nImage filename: {image_path}"
         image_content = {
             "type": "image_url"
         }
