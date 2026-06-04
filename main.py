@@ -1,3 +1,4 @@
+import validators
 import uuid
 from datetime import datetime
 from config import SERVICES
@@ -30,6 +31,15 @@ def _conversation(prompt):
     
 
 def _encode_image(image_path: str | Path, MAX_WIDTH: int = 1568):
+    """Base64 encoding of attached images
+
+    Args:
+        image_path (str | Path): Path to the image to be added to the prompt message
+        MAX_WIDTH (int, optional): Downsize image to keep it between the limits of the models. Defaults to 1568 to match Anthropic's recommended size. 
+
+    Returns:
+        Base64 decoded image data.
+    """
     
     img = Image.open(image_path)
     
@@ -64,12 +74,14 @@ def _context_window(user_input: str, image_path: str | Path | None = None, instr
     user_content = [{"type": "text", "text": user_input}]
     
     if image_path:
-        b64img = _encode_image(image_path)
         user_content[0]["text"] += f"\nImage filename: {image_path}"
-        user_content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{b64img}"}
-        })
+        image_content = {
+            "type": "image_url"
+        }
+        image_content["image_url"] = str(image_path) if validators.url(image_path) else f"data:image/jpeg;base64,{_encode_image(image_path)}"
+        
+        user_content.append(image_content)
+    
     
     messages_list.append({
             "role": "user",
@@ -123,9 +135,6 @@ def batch_processing(service: dict, model: str, user_input: str, image_dir: str 
     destination_directory = Path("conversations", str(conversation.id))
     
     Path.mkdir(destination_directory, parents=True, exist_ok=True)
-    
-    if not instructions:
-        instructions = "Be concise, return the response in json so it can be parsed by a python script afterwards."
     
     img_dir = Path(image_dir)
     if not img_dir.exists():
