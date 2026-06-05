@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from config import SERVICES
 from openai import OpenAI
+from openai.types.chat import ChatCompletion 
 from pprint import pp
 import logging        
 import argparse
@@ -110,7 +111,28 @@ def list_models(verbose: bool =False) -> None:
         except Exception as e:
             logging.error(f"Error listing models for {name}: {e}")
 
-def chat(service: dict, model: str, user_input: str, image_path: str | Path | None = None, instructions: str | None = None):
+def chat(service: dict, 
+         model: str, 
+         user_input: str, 
+         image_path: str | Path | None = None, 
+         instructions: str | None = None, 
+         usage_data: bool = False, 
+         full_response: bool = False
+         ) -> (ChatCompletion | dict | str | None):
+    """_summary_
+
+    Args:
+        service (dict): _description_
+        model (str): _description_
+        user_input (str): _description_
+        image_path (str | Path | None, optional): _description_. Defaults to None.
+        instructions (str | None, optional): _description_. Defaults to None.
+        full_response (bool, optional): Returns the raw response from the model. Defaults to False.
+
+    Returns:
+        ChatCompletion | str | None
+    """
+    
     
     client = _client(service) 
     
@@ -121,6 +143,20 @@ def chat(service: dict, model: str, user_input: str, image_path: str | Path | No
         model=model,
         messages=_context_window(user_input, image_path, instructions) # type: ignore
     )
+    
+    if full_response:
+        return response
+    
+    if usage_data:
+        usage = response.usage
+        return {
+            "content": response.choices[0].message.content,
+            "usage_data": {
+                "completion_tokens": usage.completion_tokens,
+                "prompt_tokens": usage.prompt_tokens,
+                "total_tokens": usage.total_tokens
+            }
+        }
     
     return response.choices[0].message.content
 
@@ -137,7 +173,13 @@ def _extract_json(response: str):
     logging.warning("No json code block found")
     return
 
-def batch_processing(service: dict, model: str, user_input: str, image_dir: str | Path, instructions: str | None) -> None:
+def batch_processing(service: dict, 
+                     model: str, 
+                     user_input: str, 
+                     image_dir: str | Path, 
+                     instructions: str | None,
+                     usage_data: bool = False
+                     ) -> None:
     """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
     
     starting = datetime.now()
@@ -157,7 +199,10 @@ def batch_processing(service: dict, model: str, user_input: str, image_dir: str 
     
     img_dir = Path(image_dir)
     if not img_dir.exists():
-        raise FileNotFoundError(f"The folder {image_dir} doesn't exists")
+        raise OSError(f"The folder {image_dir} doesn't exists")
+    
+    if not any(img_dir.iterdir()):
+        raise OSError(f"Directory {str(img_dir)} is empty.")
     
     for image in Path(image_dir).iterdir():
         if not _is_image(image):
@@ -168,9 +213,22 @@ def batch_processing(service: dict, model: str, user_input: str, image_dir: str 
         init_batch["image_path"] = str(image)
         init_batch["start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        response = chat(service, model, user_input, image_path=image, instructions=instructions)
+        response = chat(service, 
+                        model, 
+                        user_input, 
+                        image_path=image, 
+                        instructions=instructions, 
+                        usage_data=usage_data
+                        )
+        
         init_batch["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        json_response = _extract_json(response)
+        
+        if usage_data:
+            response["content"] = _extract_json(response.get("content"))
+            json_response = response
+        else:
+            json_response = _extract_json(response)
+        
         if isinstance(json_response, dict):
             formatted_response = init_batch | json_response
             with open(filename, "w", encoding="utf-8") as f:
@@ -191,6 +249,7 @@ def main():
     
     imgs_args = parser.add_mutually_exclusive_group()
     list_group = parser.add_mutually_exclusive_group()
+    response_group = parser.add_mutually_exclusive_group()
     
     parser.add_argument("--service", type=str, help=f"Service provider (e.g. 'grit', 'dream-lab'). " f"Available: {list(SERVICES)}")
     list_group.add_argument("--list-models", action="store_true", help="List model IDs. Scoped to --service if provided, otherwise all services.")
@@ -198,6 +257,8 @@ def main():
     parser.add_argument("--model", type=str, help="Model ID to use. Requires --service.")
     parser.add_argument("--prompt", type=str, help="Prompt to send. Requires --service and --model.")
     parser.add_argument("--instructions", type=str, help="Instructions to guide the model.")
+    response_group.add_argument("--usage-data", action="store_true", help="Include completion usage (completion, prompt and total tokens) with the response")
+    response_group.add_argument("--raw-response", action="store_true", help="Returns the full API response")
     imgs_args.add_argument("--image-path", type=str, help="Include an image to the prompt")
     imgs_args.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
     
@@ -221,14 +282,16 @@ def main():
             if not args.service or not args.model:
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
-        batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions)
+        batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions,
+                         args.usage_data)
         return
     
     if args.prompt:
         if not args.service or not args.model:
             parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
-        print(chat(service_config, args.model, args.prompt, args.image_path, args.instructions))
+        print(chat(service_config, args.model, args.prompt, args.image_path, args.instructions,
+                   args.usage_data, args.raw_response))
 
 if __name__ == "__main__":
     main()
