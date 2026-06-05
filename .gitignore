@@ -14,3 +14,9 @@ wheels/
 
 # macOS files
 .DS_Store
+
+# Avoid sending to upstream
+conversations/
+images/
+instructions/
+prompts/
