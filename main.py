@@ -173,29 +173,40 @@ def _extract_json(response: str):
     logging.warning("No json code block found")
     return
 
-def batch_processing(service: dict, 
+def _init_batch(service: dict, 
                      model: str, 
                      user_input: str, 
                      image_dir: str | Path, 
                      instructions: str | None,
-                     usage_data: bool = False
-                     ) -> None:
-    """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
+                     conversation: str | Path | None = None) -> tuple[dict, Path, Path]:
     
-    starting = datetime.now()
+    if conversation:
+        conversation_path = Path(f"conversations/{conversation}/{conversation}.json")
+        if conversation_path.is_file():
+            with open(conversation_path, "r") as f:
+                conversation_dict = json.load(f)
+            
+            processing_log = Path(f"conversations/{conversation}/processing.log")
+            
+            return conversation_dict, conversation_path, processing_log
     
+    # Start fresh batch
     init_batch = {
-        "project_id": starting.strftime('%Y%m%d%H%M%S'),
+        "project_id": datetime.now().strftime('%Y%m%d%H%M%S'),
         "service_url": service.get("url"),
         "model": model,
         "source_folder": image_dir,
         "prompt": user_input,
     }
+    
     if instructions:
         init_batch["instructions"] = instructions
     
-    batch_directory = Path(f"conversations/{init_batch.get('project_id', 'batch')}")
-    Path.mkdir(batch_directory, parents=True, exist_ok=True)
+    if not conversation:
+        conversation = Path(f"conversations/{init_batch.get('project_id', 'batch')}")
+        Path.mkdir(conversation, parents=True, exist_ok=True)
+    else:
+        conversation = Path(f"conversations/{conversation}")
     
     img_dir = Path(image_dir)
     if not img_dir.exists():
@@ -204,14 +215,49 @@ def batch_processing(service: dict,
     if not any(img_dir.iterdir()):
         raise OSError(f"Directory {str(img_dir)} is empty.")
     
+    filename = Path(conversation, init_batch.get('project_id', 'batch')).with_suffix(".json")
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(init_batch, f, indent=4)
+    
+    processing_log = Path(conversation, "processing").with_suffix(".log")
+    processing_log.touch()
+    
+    init_batch["start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    return init_batch, filename, processing_log
+
+
+def batch_processing(service: dict, 
+                     model: str, 
+                     user_input: str, 
+                     image_dir: str | Path, 
+                     instructions: str | None,
+                     usage_data: bool = False,
+                     conversation: str | Path | None = None
+                     ) -> None:
+    """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
+      
+    batch_dict, filename, processing_log = _init_batch(service, model, user_input, image_dir, instructions, conversation)
+    
+    # Starting the batch processing
+    results = batch_dict.get("results", [])
+    usage_data_empty = {
+        "completion_tokens": 0,
+        "prompt_tokens": 0,
+        "total_tokens": 0
+    }
+
+    usage_data_cum = batch_dict.get("usage_data", usage_data_empty)
+    
     for image in Path(image_dir).iterdir():
         if not _is_image(image):
             continue
         
-        filename = Path(batch_directory, image.stem).with_suffix(".json")
-        # add image path to init_batch
-        init_batch["image_path"] = str(image)
-        init_batch["start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(processing_log, "r") as pl:
+            current_log = pl.read()
+        
+        if str(image) in current_log:
+            continue
         
         response = chat(service, 
                         model, 
@@ -221,19 +267,30 @@ def batch_processing(service: dict,
                         usage_data=usage_data
                         )
         
-        init_batch["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
         if usage_data:
-            response["content"] = _extract_json(response.get("content"))
-            json_response = response
+            json_response = _extract_json(response.get("content"))
+            usage_data_cum["completion_tokens"] += response["usage_data"].get("completion_tokens", 0)
+            usage_data_cum["prompt_tokens"] += response["usage_data"].get("prompt_tokens", 0)
+            usage_data_cum["total_tokens"] += response["usage_data"].get("total_tokens", 0)
         else:
             json_response = _extract_json(response)
         
+        # add image path to result
+        json_response["image_path"] = str(image)
+        
         if isinstance(json_response, dict):
-            formatted_response = init_batch | json_response
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(formatted_response, f, indent=4)
+            results.append(json_response)
+            with open(processing_log, "w") as pl:
+                pl.write(f"{str(image)}\n" + current_log)
+        else:
+            logging.warning(f"Response ...{json_response[:50]}... is not in JSON valid format. Skipped from results")
     
+    batch_dict["results"] = results
+    batch_dict["usage_data"] = usage_data_cum
+    batch_dict["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(batch_dict, f, indent=4, ensure_ascii=False)
 
 
 def _validate_service(parser: argparse.ArgumentParser, service_name: str) -> dict:
@@ -261,6 +318,7 @@ def main():
     response_group.add_argument("--raw-response", action="store_true", help="Returns the full API response")
     imgs_args.add_argument("--image-path", type=str, help="Include an image to the prompt")
     imgs_args.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
+    parser.add_argument("--conversation", type=str, help="ID of the conversation. For instance, 20260604145733")
     
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -283,7 +341,7 @@ def main():
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
         batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions,
-                         args.usage_data)
+                         args.usage_data, args.conversation)
         return
     
     if args.prompt:
