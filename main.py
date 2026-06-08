@@ -275,9 +275,6 @@ def batch_processing(service: dict,
     for image in Path(image_dir).iterdir():
         if not _is_image(image):
             continue
-              
-                
-        result_filename = Path("conversations", batch_dict["project_id"], image.stem).with_suffix(".json")
         
         if _already_processed(batch_dict, batch_dict["project_id"], image):
             logging.info(f"Image {str(image)} was processed already. Skipping...")
