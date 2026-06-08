@@ -15,6 +15,13 @@ from pathlib import Path
 import re
 import json
 
+logging.basicConfig(
+    filename='conversations/conversations.log',
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
 def _client(service: dict) -> OpenAI:
     """helper function to build the client object"""
     if not isinstance(service, dict):
@@ -225,6 +232,23 @@ def _init_batch(service: dict,
     
     return init_batch, project_filename
 
+def _already_processed(batch_dict, conversation_id, image: Path):
+    
+    if batch_dict.get("results"):
+        results = [result.get("image_path") for result in batch_dict.get("results")]
+        if str(image) in results:
+            return True
+              
+    return Path("conversations", conversation_id, image.stem).with_suffix(".json").exists()
+
+def _cleaning_folder(conversation_id):
+    """_summary_
+
+    Args:
+        conversation_id (str): conversation ID or project_id
+    """
+    
+    
 
 def batch_processing(service: dict, 
                      model: str, 
@@ -251,10 +275,11 @@ def batch_processing(service: dict,
     for image in Path(image_dir).iterdir():
         if not _is_image(image):
             continue
-        
+              
+                
         result_filename = Path("conversations", batch_dict["project_id"], image.stem).with_suffix(".json")
         
-        if result_filename.exists():
+        if _already_processed(batch_dict, batch_dict["project_id"], image):
             logging.info(f"Image {str(image)} was processed already. Skipping...")
             continue
         
@@ -266,7 +291,7 @@ def batch_processing(service: dict,
                         usage_data=usage_data
                         )
         
-        content = response.get("content", {})
+        content = response.get("content", "")
         json_response = _extract_json(content)
         if not isinstance(json_response, dict):
             preview = str(json_response)[:50]
