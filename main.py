@@ -378,12 +378,12 @@ def main():
             list_models(verbose=verbose)
         return
     
-    if args.batch:
+    if args.batch_structured:
         if args.prompt:
             if not args.service or not args.model:
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
-        batch_structured(service_config, args.model, args.prompt, args.batch, args.instructions,
+        batch_structured(service_config, args.model, args.prompt, args.batch_structured, args.instructions,
                          args.usage_data, args.conversation, args.clean_cache)
         return
     
