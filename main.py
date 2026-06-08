@@ -1,5 +1,4 @@
 import validators
-import uuid
 from datetime import datetime
 from config import SERVICES
 from openai import OpenAI
@@ -263,7 +262,7 @@ def _cleaning_folder(conversation_id):
         if filepath.is_file() and filepath != Path("conversations", conversation_id, conversation_id).with_suffix(".json"):
             filepath.unlink()
     
-def batch_processing(service: dict, 
+def batch_structured(service: dict, 
                      model: str, 
                      user_input: str, 
                      image_dir: str | Path, 
@@ -360,7 +359,7 @@ def main():
     response_group.add_argument("--usage-data", action="store_true", help="Include completion usage (completion, prompt and total tokens) with the response")
     response_group.add_argument("--raw-response", action="store_true", help="Returns the full API response")
     imgs_args.add_argument("--image-path", type=str, help="Include an image to the prompt")
-    imgs_args.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
+    imgs_args.add_argument("--batch-structured", type=str, help="Path to a directory with images. Requires --service, --model and --prompt. Returns a JSON structured result")
     parser.add_argument("--conversation", type=str, help="ID of the conversation. For instance, 20260604145733")
     parser.add_argument("--clean-cache", action="store_true", help="remove temp results getting during batch processing")
     
@@ -384,7 +383,7 @@ def main():
             if not args.service or not args.model:
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
-        batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions,
+        batch_structured(service_config, args.model, args.prompt, args.batch, args.instructions,
                          args.usage_data, args.conversation, args.clean_cache)
         return
     
