@@ -15,6 +15,8 @@ from pathlib import Path
 import re
 import json
 
+Path("conversations").mkdir(exist_ok=True, parents=True)
+
 logging.basicConfig(
     filename='conversations/conversations.log',
     filemode='a',
