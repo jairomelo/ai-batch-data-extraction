@@ -178,7 +178,7 @@ def _init_batch(service: dict,
                      user_input: str, 
                      image_dir: str | Path, 
                      instructions: str | None,
-                     conversation: str | Path | None = None) -> tuple[dict, Path, Path]:
+                     conversation: str | Path | None = None) -> tuple[dict, Path]:
     
     if conversation:
         conversation_path = Path(f"conversations/{conversation}/{conversation}.json")
@@ -186,9 +186,7 @@ def _init_batch(service: dict,
             with open(conversation_path, "r") as f:
                 conversation_dict = json.load(f)
             
-            processing_log = Path(f"conversations/{conversation}/processing.log")
-            
-            return conversation_dict, conversation_path, processing_log
+            return conversation_dict, conversation_path
     
     # Start fresh batch
     init_batch = {
@@ -215,16 +213,13 @@ def _init_batch(service: dict,
     if not any(img_dir.iterdir()):
         raise OSError(f"Directory {str(img_dir)} is empty.")
     
-    filename = Path(conversation, init_batch.get('project_id', 'batch')).with_suffix(".json")
-    with open(filename, "w", encoding="utf-8") as f:
+    project_filename = Path(conversation, init_batch.get('project_id', 'batch')).with_suffix(".json")
+    with open(project_filename, "w", encoding="utf-8") as f:
         json.dump(init_batch, f, indent=4)
-    
-    processing_log = Path(conversation, "processing").with_suffix(".log")
-    processing_log.touch()
     
     init_batch["start"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    return init_batch, filename, processing_log
+    return init_batch, project_filename
 
 
 def batch_processing(service: dict, 
@@ -237,10 +232,10 @@ def batch_processing(service: dict,
                      ) -> None:
     """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
       
-    batch_dict, filename, processing_log = _init_batch(service, model, user_input, image_dir, instructions, conversation)
+    batch_dict, project_filename = _init_batch(service, model, user_input, image_dir, instructions, conversation)
     
     # Starting the batch processing
-    results = batch_dict.get("results", [])
+    
     usage_data_empty = {
         "completion_tokens": 0,
         "prompt_tokens": 0,
@@ -253,10 +248,10 @@ def batch_processing(service: dict,
         if not _is_image(image):
             continue
         
-        with open(processing_log, "r") as pl:
-            current_log = pl.read()
+        result_filename = Path("conversations", batch_dict["project_id"], image.stem).with_suffix(".json")
         
-        if str(image) in current_log:
+        if result_filename.exists():
+            logging.info(f"Image {str(image)} was processed already. Skipping...")
             continue
         
         response = chat(service, 
@@ -279,18 +274,28 @@ def batch_processing(service: dict,
         json_response["image_path"] = str(image)
         
         if isinstance(json_response, dict):
-            results.append(json_response)
-            with open(processing_log, "w") as pl:
-                pl.write(f"{str(image)}\n" + current_log)
+            with open(result_filename, "w") as r:
+                json.dump(json_response, r, indent=4, ensure_ascii=False)
+                
+            logging.info(f"Image {str(image)} was successfuly processed.")
+                
+            batch_dict["usage_data"] = usage_data_cum
+            with open(project_filename, "w", encoding="utf-8") as f:
+                json.dump(batch_dict, f, indent=4, ensure_ascii=False)
+            
         else:
             logging.warning(f"Response ...{json_response[:50]}... is not in JSON valid format. Skipped from results")
     
-    batch_dict["results"] = results
-    batch_dict["usage_data"] = usage_data_cum
+    # Attach results to main dict
+    batch_dict["results"] = [json.load(open(f)) for f in Path("conversations", batch_dict["project_id"]).glob("*.json") if f.stem != batch_dict["project_id"]]
     batch_dict["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    with open(filename, "w", encoding="utf-8") as f:
+    with open(project_filename, "w", encoding="utf-8") as f:
         json.dump(batch_dict, f, indent=4, ensure_ascii=False)
+        
+    # Clean directory
+    for filepath in Path("conversations", batch_dict["project_id"]).iterdir():
+        if filepath.is_file() and filepath != project_filename:
+            filepath.unlink()
 
 
 def _validate_service(parser: argparse.ArgumentParser, service_name: str) -> dict:
