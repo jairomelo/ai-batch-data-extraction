@@ -160,7 +160,7 @@ def chat(service: dict,
     
     return response.choices[0].message.content
 
-def _extract_json(response: str):
+def _extract_json(response: str) -> dict | None:
     match = re.search(r"```json\s*(\{.*?\})\s*```", response, re.DOTALL)
     if match:
         json_string = match.group(1)
@@ -172,6 +172,10 @@ def _extract_json(response: str):
     
     logging.warning("No json code block found")
     return
+
+def _load_json(path):
+    with open(path) as f:
+        return json.load(f)
 
 def _init_batch(service: dict, 
                      model: str, 
@@ -262,32 +266,33 @@ def batch_processing(service: dict,
                         usage_data=usage_data
                         )
         
+        content = response.get("content", {})
+        json_response = _extract_json(content)
+        if not isinstance(json_response, dict):
+            preview = str(json_response)[:50]
+            logging.warning(f"Response ...{preview}... is not in JSON valid format. Skipped from results")
+            continue
+        
+        # inject image path to json_response
+        json_response["image_path"] = str(image)
+        
         if usage_data:
-            json_response = _extract_json(response.get("content"))
             usage_data_cum["completion_tokens"] += response["usage_data"].get("completion_tokens", 0)
             usage_data_cum["prompt_tokens"] += response["usage_data"].get("prompt_tokens", 0)
             usage_data_cum["total_tokens"] += response["usage_data"].get("total_tokens", 0)
-        else:
-            json_response = _extract_json(response)
         
-        # add image path to result
-        json_response["image_path"] = str(image)
-        
-        if isinstance(json_response, dict):
-            with open(result_filename, "w") as r:
-                json.dump(json_response, r, indent=4, ensure_ascii=False)
-                
-            logging.info(f"Image {str(image)} was successfuly processed.")
-                
-            batch_dict["usage_data"] = usage_data_cum
-            with open(project_filename, "w", encoding="utf-8") as f:
-                json.dump(batch_dict, f, indent=4, ensure_ascii=False)
+        with open(result_filename, "w") as r:
+            json.dump(json_response, r, indent=4, ensure_ascii=False)
             
-        else:
-            logging.warning(f"Response ...{json_response[:50]}... is not in JSON valid format. Skipped from results")
+        logging.info(f"Image {str(image)} was successfuly processed.")
+            
+        batch_dict["usage_data"] = usage_data_cum
+        with open(project_filename, "w", encoding="utf-8") as f:
+            json.dump(batch_dict, f, indent=4, ensure_ascii=False)
     
     # Attach results to main dict
-    batch_dict["results"] = [json.load(open(f)) for f in Path("conversations", batch_dict["project_id"]).glob("*.json") if f.stem != batch_dict["project_id"]]
+    
+    batch_dict["results"] = [_load_json(f) for f in Path("conversations", batch_dict["project_id"]).glob("*.json") if f.stem != batch_dict["project_id"]]
     batch_dict["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(project_filename, "w", encoding="utf-8") as f:
         json.dump(batch_dict, f, indent=4, ensure_ascii=False)
