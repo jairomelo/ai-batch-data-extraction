@@ -309,7 +309,7 @@ def batch_structured(service: dict,
             continue
         
         # inject image path to json_response
-        json_response["image_path"] = str(image)
+        json_response["image_path"] = str(Path(image).name)
         
         if usage_data:
             usage_data_cum["completion_tokens"] += response["usage_data"].get("completion_tokens", 0)
