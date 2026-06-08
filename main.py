@@ -241,22 +241,34 @@ def _already_processed(batch_dict, conversation_id, image: Path):
               
     return Path("conversations", conversation_id, image.stem).with_suffix(".json").exists()
 
+def _attach_results(batch_dict):
+    current_results = batch_dict.get("results", [])
+    new_results = [_load_json(f) for f in Path("conversations", batch_dict["project_id"]).glob("*.json") if f.stem != batch_dict["project_id"]]
+
+    imgs_seen = [r.get("image_path") for r in current_results]
+    deduped_new = [r for r in new_results if r.get("image_path") not in imgs_seen]    
+
+    return current_results + deduped_new
+
 def _cleaning_folder(conversation_id):
     """_summary_
 
     Args:
         conversation_id (str): conversation ID or project_id
     """
+    # Clean directory
+    for filepath in Path("conversations", conversation_id).iterdir():
+        if filepath.is_file() and filepath != Path("conversations", conversation_id, conversation_id).with_suffix(".json"):
+            filepath.unlink()
     
-    
-
 def batch_processing(service: dict, 
                      model: str, 
                      user_input: str, 
                      image_dir: str | Path, 
                      instructions: str | None,
                      usage_data: bool = False,
-                     conversation: str | Path | None = None
+                     conversation: str | Path | None = None,
+                     clean_cache: bool = False
                      ) -> None:
     """Use the same prompt to iterate over multiple images in the same folder. No increment in context window"""
       
@@ -303,7 +315,7 @@ def batch_processing(service: dict,
             usage_data_cum["prompt_tokens"] += response["usage_data"].get("prompt_tokens", 0)
             usage_data_cum["total_tokens"] += response["usage_data"].get("total_tokens", 0)
         
-        with open(result_filename, "w") as r:
+        with open(Path("conversations", batch_dict["project_id"], image.stem).with_suffix(".json"), "w") as r:
             json.dump(json_response, r, indent=4, ensure_ascii=False)
             
         logging.info(f"Image {str(image)} was successfuly processed.")
@@ -313,17 +325,14 @@ def batch_processing(service: dict,
             json.dump(batch_dict, f, indent=4, ensure_ascii=False)
     
     # Attach results to main dict
-    
-    batch_dict["results"] = [_load_json(f) for f in Path("conversations", batch_dict["project_id"]).glob("*.json") if f.stem != batch_dict["project_id"]]
+    batch_dict["results"] = _attach_results(batch_dict)
     batch_dict["end"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     with open(project_filename, "w", encoding="utf-8") as f:
         json.dump(batch_dict, f, indent=4, ensure_ascii=False)
-        
-    # Clean directory
-    for filepath in Path("conversations", batch_dict["project_id"]).iterdir():
-        if filepath.is_file() and filepath != project_filename:
-            filepath.unlink()
-
+    
+    if clean_cache:
+        _cleaning_folder(batch_dict["project_id"]) 
 
 def _validate_service(parser: argparse.ArgumentParser, service_name: str) -> dict:
     if service_name not in SERVICES:
@@ -351,6 +360,7 @@ def main():
     imgs_args.add_argument("--image-path", type=str, help="Include an image to the prompt")
     imgs_args.add_argument("--batch", type=str, help="Path to a directory with images. Requires --service, --model and --prompt")
     parser.add_argument("--conversation", type=str, help="ID of the conversation. For instance, 20260604145733")
+    parser.add_argument("--clean-cache", action="store_true", help="remove temp results getting during batch processing")
     
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -373,7 +383,7 @@ def main():
                 parser.error("--prompt requires both --service and --model")
         service_config = _validate_service(parser, args.service)
         batch_processing(service_config, args.model, args.prompt, args.batch, args.instructions,
-                         args.usage_data, args.conversation)
+                         args.usage_data, args.conversation, args.clean_cache)
         return
     
     if args.prompt:
