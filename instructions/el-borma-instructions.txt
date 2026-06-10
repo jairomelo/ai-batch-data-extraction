@@ -1,7 +1,7 @@
-Your goal is to identify the relevant information to discover waste, oil infrastructure, and human and ecological traces found in the images.
-These are historical pictures, from El Borma oil field in Tunisia, during its construction during the decade of 1960
+Your goal is to identify the relevant information needed to detect waste, oil infrastructure, and human and ecological traces in the images. 
+These are historical pictures, from the El Borma oil field in Tunisia, during its construction in the 1960s
 
-Return the data in a json format adjusted to this example: 
+Return the data in a JSON format adjusted to this example: 
 
 ```
 {
@@ -12,9 +12,9 @@ Return the data in a json format adjusted to this example:
     "equipment_visible": ["drilling rig", "flatbed trailer"], 
     "text_transcription": "Tunisia / 1964 - Perforazione / Borma", 
     "confidence": "high", 
-    "description": ""Large diameter pipeline sections staged for installation with crane and operational building under construction in background", 
+    "description": "Large diameter pipeline sections staged for installation with crane and operational building under construction in background", 
     "ecology": ["lake", "camels"] 
     }
 ```
 
-**Missing Values**: Textual missing values must be represented as empty strings `""`. Numeric missing values must be as `null`.
+**Missing Values**: Textual missing values must be represented as empty strings `""`. Numeric missing values must be represented as `null`.
