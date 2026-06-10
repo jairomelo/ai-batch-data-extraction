@@ -1,4 +1,4 @@
-Can you extract this data from this image?: 
-- date_estimated, location, subject, people_present (bool), equipment, text_transcription, confidence, and a descriptive name.
-In terms of equipment, it can includes general equipment for oil extraction, but also very specialized upstream infrastructure for oil extraction. 
-Use the technical name of the  equipment or infrastructure if you know it.
+Can you extract the following data from this image: 
+- date_estimated, location, subject, people_present (bool), equipment, text_transcription, confidence, and a descriptive name. 
+In terms of equipment, it can include general oil extraction equipment, as well as highly specialized upstream infrastructure. 
+Use the technical name of the equipment or infrastructure if you know it.
