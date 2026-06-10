@@ -16,7 +16,15 @@ wheels/
 .DS_Store
 
 # Avoid sending to upstream
-conversations/
-images/
-instructions/
-prompts/
+
+images/*
+!images/ENI_AF_D4_A1_16.jpeg
+instructions/*
+!instructions/el-borma-instructions.txt
+prompts/*
+!prompts/el-borma-images.txt
+
+conversations/*
+!conversations/20260608154921
+conversations/20260608154921/*
+!conversations/20260608154921/ENI_AF_D4_A1_16.json

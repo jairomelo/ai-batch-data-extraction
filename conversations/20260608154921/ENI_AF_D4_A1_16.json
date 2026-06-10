@@ -1,0 +1,22 @@
+{
+    "date_estimates": "1964",
+    "location": "El Borma, Tunisia",
+    "subject": "drilling operation",
+    "people_present": false,
+    "equipment_visible": [
+        "drilling rig",
+        "derrick",
+        "rig substructure",
+        "site utility trailers",
+        "support vehicles"
+    ],
+    "text_transcription": "TUNISIA\n5\nTunisia\n1964 - Perforazione\nBorma",
+    "confidence": "high",
+    "description": "High-angle aerial photograph of an active oil drilling rig (derrick) and support equipment surrounded by a vast landscape of desert sand dunes.",
+    "ecology": [
+        "desert",
+        "sand dunes",
+        "sparse desert shrubs"
+    ],
+    "image_path": "ENI_AF_D4_A1_16.jpeg"
+}
