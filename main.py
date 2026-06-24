@@ -67,7 +67,7 @@ def _read_if_file(value: str) -> str:
     return value
 
 def _is_image(path_obj: Path) -> bool:
-    img_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'}
+    img_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif'}
     return path_obj.suffix.lower() in img_extensions
 
 def _context_window(user_input: str, image_path: str | Path | None = None, instructions: str | None = None) -> list[dict]:
