@@ -13,6 +13,7 @@ import base64
 from pathlib import Path
 import re
 import json
+from pydantic_models import OilData, SchemaTest
 
 Path("conversations").mkdir(exist_ok=True, parents=True)
 
@@ -147,9 +148,10 @@ def chat(service: dict,
     user_input = _read_if_file(user_input)
     instructions = _read_if_file(instructions) if instructions else None
     
-    response = client.chat.completions.create(
+    response = client.beta.chat.completions.parse(
         model=model,
-        messages=_context_window(user_input, image_path, instructions) # type: ignore
+        messages=_context_window(user_input, image_path, instructions),
+        response_format=OilData
     )
     
     if full_response:
@@ -166,7 +168,7 @@ def chat(service: dict,
             }
         }
     
-    return response.choices[0].message.content
+    return response.choices[0].message.parsed.model_dump()
 
 def _extract_json(response: str) -> dict | None:
     match = re.search(r"```json\s*(\{.*?\})\s*```", response, re.DOTALL)
@@ -301,12 +303,7 @@ def batch_structured(service: dict,
                         usage_data=usage_data
                         )
         
-        content = response.get("content", "")
-        json_response = _extract_json(content)
-        if not isinstance(json_response, dict):
-            preview = str(json_response)[:50]
-            logging.warning(f"Response ...{preview}... is not in JSON valid format. Skipped from results")
-            continue
+        json_response = json.loads(response["content"])
         
         # inject image path to json_response
         json_response["image_path"] = str(Path(image).name)
